@@ -1,0 +1,6 @@
+anthropic>=0.42
+openai>=1.50
+aioconsole>=0.8
+python-dotenv>=1.0
+websockets>=14.0
+pyyaml>=6.0

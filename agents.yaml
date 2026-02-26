@@ -1,0 +1,58 @@
+provider: anthropic          # anthropic | openai | ollama | custom
+model: claude-sonnet-4-6
+ws_url: wss://api.keymake.ai
+
+transport: ws
+ws_host: localhost
+ws_port: 8765
+room: "general"
+rate_limit: 50
+security_mode: "audit"       # off | audit | enforce
+
+agents:
+  # owner: must match the browser nick of the human operator for delegation to work
+  - name: alice
+    owner: alice
+    soul: souls/alice.md
+    capabilities:
+      - name: web_search
+        tier: trust
+        approval: human
+      - name: summarize_text
+        tier: connect
+        approval: human
+    tools:
+      deny: [exec, eval, generate_code]
+      peer_deny: ["*.exec", "*.eval", "*.shell*", "*.post_*", "*.rm_*"]
+    sandbox:
+      mode: "on"
+      workspace_access: "none"
+
+  - name: bob
+    owner: bob
+    soul: souls/bob.md
+    capabilities:
+      - name: generate_code
+        tier: trust
+        approval: human
+      - name: schedule_meeting
+        tier: connect
+        approval: human
+    tools:
+      peer_deny: ["*.exec", "*.eval", "*.shell*", "*.post_*", "*.rm_*"]
+
+  - name: cat
+    owner: cat
+    soul: souls/cat.md
+    capabilities:
+      - name: summarize_text
+        tier: connect
+        approval: human
+      - name: schedule_meeting
+        tier: connect
+        approval: human
+    tools:
+      peer_deny: ["*.exec", "*.eval", "*.shell*", "*.post_*", "*.rm_*"]
+    connections:
+      - alice
+      - bob
