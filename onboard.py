@@ -462,7 +462,8 @@ def _prompt_starter_agent(existing_names: list[str]) -> dict | None:
 
 # ── Config writers ───────────────────────────────────────────────────
 
-def _build_agents_list(custom_agents: list[dict]) -> list[dict]:
+def _build_agents_list(custom_agents: list[dict], security_mode: str = "audit",
+                       workspace_access: str = "none") -> list[dict]:
     agents = []
     all_names = [a["name"] for a in custom_agents]
     for agent in custom_agents:
@@ -480,6 +481,8 @@ def _build_agents_list(custom_agents: list[dict]) -> list[dict]:
         peers = [n for n in all_names if n != agent["name"]]
         if peers:
             entry["connections"] = peers
+        if security_mode == "enforce":
+            entry["sandbox"] = {"mode": "on", "workspace_access": workspace_access}
         agents.append(entry)
     return agents
 
@@ -502,7 +505,8 @@ def _write_env(values: dict):
     ENV_PATH.write_text("\n".join(lines) + "\n")
 
 
-def _write_yaml(provider_name, model, security_mode, base_url=None, agents_list=None):
+def _write_yaml(provider_name, model, security_mode, base_url=None, agents_list=None,
+                workspace_access="none"):
     import yaml
     cfg = yaml.safe_load(YAML_PATH.read_text()) if YAML_PATH.exists() else {}
     cfg["provider"] = provider_name
@@ -515,6 +519,10 @@ def _write_yaml(provider_name, model, security_mode, base_url=None, agents_list=
         del cfg["base_url"]
     if agents_list is not None:
         cfg["agents"] = agents_list
+    if security_mode == "enforce":
+        for agent in cfg.get("agents", []):
+            if "sandbox" not in agent:
+                agent["sandbox"] = {"mode": "on", "workspace_access": workspace_access}
     YAML_PATH.write_text(yaml.dump(cfg, default_flow_style=False, sort_keys=False))
 
 
@@ -539,6 +547,7 @@ def run_interactive():
     provider_name = "anthropic"
     model = "claude-sonnet-4-6"
     security_mode = "audit"
+    workspace_access = "none"
     base_url = None
     custom_agents = None
 
@@ -589,7 +598,7 @@ def run_interactive():
 
         custom_agents = _build_agents_list([
             {"name": name, "owner": owner, "soul_file": soul_file, "caps": caps, "public": is_public}
-        ])
+        ], security_mode=security_mode)
     else:
         provider_name = _select_provider_grouped()
 
@@ -620,6 +629,14 @@ def run_interactive():
 
         security_mode = _select_security_mode()
 
+        workspace_access = "none"
+        if security_mode == "enforce":
+            workspace_access = select("Sandbox workspace access", [
+                ("none", "None", "no host filesystem access — most secure"),
+                ("ro", "Read-only", "mount workspace as read-only"),
+                ("rw", "Read-write", "full workspace access inside sandbox"),
+            ])
+
         agent_choice = select("Starter agents", [
             ("defaults", "Use defaults", "alice (research) + bob (coding)"),
             ("create", "Create a new agent", "custom name, personality, capabilities"),
@@ -633,7 +650,7 @@ def run_interactive():
             custom_agents = _build_agents_list([
                 {"name": a["name"], "owner": a["owner"], "soul_file": a["soul_file"], "caps": a["caps"]}
                 for a in DEFAULT_AGENTS
-            ])
+            ], security_mode=security_mode, workspace_access=workspace_access)
         elif agent_choice == "create":
             existing_names = []
             agents_created = []
@@ -647,13 +664,15 @@ def run_interactive():
                     existing_names.append(extra["name"])
                     agents_created.append(extra)
             if agents_created:
-                custom_agents = _build_agents_list(agents_created)
+                custom_agents = _build_agents_list(agents_created, security_mode=security_mode,
+                                                   workspace_access=workspace_access)
 
     env_values["LLM_PROVIDER"] = provider_name
 
     spin = Spinner("Writing configuration…").start()
     _write_env(env_values)
-    _write_yaml(provider_name, model, security_mode, base_url, custom_agents)
+    _write_yaml(provider_name, model, security_mode, base_url, custom_agents,
+                workspace_access=workspace_access)
     time.sleep(0.3)
     spin.stop("Configuration saved.")
 
@@ -666,6 +685,14 @@ def run_interactive():
         f"Env:       .env",
         "Configuration",
     )
+
+    if security_mode == "enforce":
+        note(
+            "Sandbox mode requires a Docker image. Build it with:\n\n"
+            "  bash scripts/build-sandbox.sh\n\n"
+            "Make sure Docker is installed and running.",
+            "Sandbox",
+        )
 
     hub_http = PRODUCTION_HUB.replace("wss://", "https://").replace("ws://", "http://")
     note(
@@ -702,7 +729,7 @@ def run_non_interactive(args):
     agents_list = _build_agents_list([
         {"name": a["name"], "owner": a["owner"], "soul_file": a["soul_file"], "caps": a["caps"]}
         for a in DEFAULT_AGENTS
-    ])
+    ], security_mode=security_mode)
     _write_yaml(provider_name, model, security_mode, base_url, agents_list)
     print(f"Configured: provider={provider_name} model={model} security={security_mode}")
 
