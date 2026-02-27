@@ -23,6 +23,13 @@ class NickClaimedError(Exception):
         super().__init__(f'Name "{nick}" is claimed. Provide a valid auth_token.')
 
 
+class RateLimitedError(Exception):
+    """Server rejected join due to rate limiting."""
+    def __init__(self, retry_after: float):
+        self.retry_after = retry_after
+        super().__init__(f"Rate limited. Retry after {retry_after:.0f}s.")
+
+
 class Transport:
     async def connect(self, agent: Agent):
         raise NotImplementedError
@@ -39,6 +46,10 @@ class WSTransport(Transport):
 
     BACKOFF_BASE = 1
     BACKOFF_MAX = 30
+    CB_WINDOW = 120        # circuit breaker: 2-minute lookback window
+    CB_THRESHOLD = 3       # circuit breaker: disconnect count to trigger
+    CB_FLOOR_INITIAL = 30  # circuit breaker: initial backoff floor (seconds)
+    CB_FLOOR_MAX = 120     # circuit breaker: maximum backoff floor (seconds)
 
     def __init__(self, host: str = "localhost", port: int = 8765, url: str | None = None):
         self._url = url or f"ws://{host}:{port}"
@@ -48,6 +59,8 @@ class WSTransport(Transport):
         self._pending_msgs: list[str] = []
         self.session_token: str = ""
         self.auth_token: str = ""
+        self._disconnect_times: list[float] = []
+        self._circuit_breaker_floor: float = 0.0
 
     async def connect(self, agent: Agent):
         self._agent = agent
@@ -78,6 +91,8 @@ class WSTransport(Transport):
                     raise NickTakenError(self._agent.agent_name)
                 if msg.get("code") == "nick_claimed":
                     raise NickClaimedError(self._agent.agent_name)
+                if msg.get("code") == "rate_limited":
+                    raise RateLimitedError(msg.get("retry_after", 60))
             if msg.get("type") == "joined":
                 self.session_token = msg.get("token", "")
             else:
@@ -95,6 +110,34 @@ class WSTransport(Transport):
                 await self._ws.send(json.dumps({"type": "message", "body": body}))
         except Exception:
             pass
+
+    def _check_circuit_breaker(self) -> float:
+        """Record a disconnect and return the backoff floor."""
+        import time
+        now = time.monotonic()
+        self._disconnect_times.append(now)
+        cutoff = now - self.CB_WINDOW
+        self._disconnect_times = [t for t in self._disconnect_times if t > cutoff]
+        if len(self._disconnect_times) < self.CB_THRESHOLD:
+            if self._circuit_breaker_floor > 0:
+                name = self._agent.agent_name if self._agent else "?"
+                print(f"[ws] Circuit breaker reset for {name}", flush=True)
+            self._circuit_breaker_floor = 0.0
+            return 0.0
+        if self._circuit_breaker_floor == 0:
+            self._circuit_breaker_floor = self.CB_FLOOR_INITIAL
+        else:
+            self._circuit_breaker_floor = min(
+                self._circuit_breaker_floor * 2, self.CB_FLOOR_MAX
+            )
+        name = self._agent.agent_name if self._agent else "?"
+        print(
+            f"[ws] Circuit breaker activated for {name}: "
+            f"{len(self._disconnect_times)} disconnects in {self.CB_WINDOW}s, "
+            f"backoff floor now {self._circuit_breaker_floor}s",
+            flush=True,
+        )
+        return self._circuit_breaker_floor
 
     async def _listen(self):
         while not self._closing:
@@ -126,7 +169,8 @@ class WSTransport(Transport):
             name = self._agent.agent_name if self._agent else "?"
             print(f"[ws] Connection lost for {name}, reconnecting...", flush=True)
 
-            delay = self.BACKOFF_BASE
+            floor = self._check_circuit_breaker()
+            delay = max(self.BACKOFF_BASE, floor)
             while not self._closing:
                 try:
                     await asyncio.sleep(delay)
@@ -137,9 +181,13 @@ class WSTransport(Transport):
                     break
                 except (NickTakenError, NickClaimedError):
                     raise
+                except RateLimitedError as exc:
+                    delay = max(exc.retry_after, delay)
+                    print(f"[ws] {name} rate limited by server, waiting {delay:.0f}s", flush=True)
                 except Exception as exc:
-                    print(f"[ws] {name} reconnect failed ({exc}), retrying in {min(delay * 2, self.BACKOFF_MAX)}s", flush=True)
                     delay = min(delay * 2, self.BACKOFF_MAX)
+                    delay = max(delay, floor)
+                    print(f"[ws] {name} reconnect failed ({exc}), retrying in {delay:.0f}s", flush=True)
 
     async def disconnect(self):
         self._closing = True
