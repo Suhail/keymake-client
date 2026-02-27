@@ -7,28 +7,4 @@ ws_port: 8765
 room: general
 rate_limit: 50
 security_mode: enforce
-agents:
-- name: wise-falcon
-  owner: Wise Falcon
-  soul: souls/wise-falcon.md
-  public: true
-  capabilities:
-  - name: web_search
-    tier: public
-    approval: auto
-  - name: summarize_text
-    tier: public
-    approval: auto
-  - name: claude_code
-    tier: public
-    approval: auto
-  tools:
-    peer_deny:
-    - '*.exec'
-    - '*.eval'
-    - '*.shell*'
-    - '*.post_*'
-    - '*.rm_*'
-  sandbox:
-    mode: 'on'
-    workspace_access: none
+agents: []

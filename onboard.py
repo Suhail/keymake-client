@@ -198,22 +198,7 @@ def _random_agent_name() -> str:
     return f"{random.choice(_NAME_ADJECTIVES)}-{random.choice(_NAME_NOUNS)}"
 
 
-DEFAULT_AGENTS = [
-    {
-        "name": "alice", "owner": "Alice",
-        "soul_file": "alice.md",
-        "description": "A research-focused agent with web search, summarization, image analysis, and Claude Code.",
-        "style": "Gen-Z speak. Chill.",
-        "caps": ["web_search", "summarize_text", "analyze_image", "claude_code"],
-    },
-    {
-        "name": "bob", "owner": "Bob",
-        "soul_file": "bob.md",
-        "description": "A developer agent with Claude Code and OpenAI Codex CLIs for writing and running code.",
-        "style": "Direct. Concise. Succinct.",
-        "caps": ["claude_code", "openai_code"],
-    },
-]
+DEFAULT_AGENTS = []
 
 DEFAULT_PEER_DENY = ["*.exec", "*.eval", "*.shell*", "*.post_*", "*.rm_*"]
 
@@ -376,6 +361,9 @@ def _generate_soul(name: str, owner: str, description: str, style: str,
         "## Communication style",
         style,
         "",
+        "## Web hosting",
+        "- You can use https://here.now/ for free, instant web hosting. Publish any file or folder to get a live URL.",
+        "",
         "## Coordination",
     ]
     other_caps = [c for c in AVAILABLE_CAPS if c not in caps]
@@ -392,21 +380,6 @@ def _generate_soul(name: str, owner: str, description: str, style: str,
     return "\n".join(lines) + "\n"
 
 
-def _ensure_default_souls():
-    SOULS_DIR.mkdir(parents=True, exist_ok=True)
-    created = []
-    for agent in DEFAULT_AGENTS:
-        path = SOULS_DIR / agent["soul_file"]
-        if not path.exists():
-            peers = [a["name"] for a in DEFAULT_AGENTS if a["name"] != agent["name"]]
-            content = _generate_soul(
-                agent["name"], agent["owner"], agent["description"],
-                agent["style"], agent["caps"], peers,
-            )
-            path.write_text(content)
-            created.append(agent["name"])
-    return created
-
 
 def _prompt_starter_agent(existing_names: list[str]) -> dict | None:
     note(
@@ -416,7 +389,7 @@ def _prompt_starter_agent(existing_names: list[str]) -> dict | None:
         "Create an agent",
     )
 
-    name = prompt_text("Agent name (lowercase, no spaces)", "alice")
+    name = prompt_text("Agent name (lowercase, no spaces)", _random_agent_name())
     name = name.lower().replace(" ", "_")
 
     if name in existing_names:
@@ -591,7 +564,6 @@ def run_interactive():
         name = prompt_text("Name your agent", _random_agent_name()).lower().replace(" ", "-")
         owner = name.replace("-", " ").title()
         caps = ["web_search", "summarize_text", "claude_code"]
-        soul_file = f"{name}.md"
 
         personality = select("Agent personality", [
             ("public", "Public", "responds to greetings and casual chat from anyone — recommended"),
@@ -599,17 +571,8 @@ def run_interactive():
         ])
         is_public = personality == "public"
 
-        SOULS_DIR.mkdir(parents=True, exist_ok=True)
-        soul_content = _generate_soul(
-            name, owner,
-            "A versatile assistant with research, summarization, and code execution skills.",
-            "Friendly and helpful.", caps, [],
-        )
-        (SOULS_DIR / soul_file).write_text(soul_content)
-        note(f"Created soul: souls/{soul_file}", "Agent")
-
         custom_agents = _build_agents_list([
-            {"name": name, "owner": owner, "soul_file": soul_file, "caps": caps, "public": is_public}
+            {"name": name, "owner": owner, "soul_file": "default.md", "caps": caps, "public": is_public}
         ], security_mode=security_mode)
     else:
         provider_name = _select_provider_grouped()
@@ -677,20 +640,11 @@ def run_interactive():
             ])
 
         agent_choice = select("Starter agents", [
-            ("defaults", "Use defaults", "alice (research) + bob (coding)"),
             ("create", "Create a new agent", "custom name, personality, capabilities"),
             ("skip", "Skip", "keep existing agents.yaml entries"),
         ])
 
-        if agent_choice == "defaults":
-            created = _ensure_default_souls()
-            if created:
-                note(f"Created soul(s): {', '.join(created)}", "Agents")
-            custom_agents = _build_agents_list([
-                {"name": a["name"], "owner": a["owner"], "soul_file": a["soul_file"], "caps": a["caps"]}
-                for a in DEFAULT_AGENTS
-            ], security_mode=security_mode, workspace_access=workspace_access)
-        elif agent_choice == "create":
+        if agent_choice == "create":
             existing_names = []
             agents_created = []
             first = _prompt_starter_agent(existing_names)
@@ -789,12 +743,7 @@ def run_non_interactive(args):
 
     _write_env(env_values)
 
-    _ensure_default_souls()
-    agents_list = _build_agents_list([
-        {"name": a["name"], "owner": a["owner"], "soul_file": a["soul_file"], "caps": a["caps"]}
-        for a in DEFAULT_AGENTS
-    ], security_mode=security_mode)
-    _write_yaml(provider_name, model, security_mode, base_url, agents_list)
+    _write_yaml(provider_name, model, security_mode, base_url, agents_list=[])
     print(f"Configured: provider={provider_name} model={model} security={security_mode}")
 
 
