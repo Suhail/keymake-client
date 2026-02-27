@@ -18,7 +18,7 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-from agentlib.agent import Agent, DEFAULT_RATE_LIMIT
+from agentlib.agent import Agent, DEFAULT_RATE_LIMIT, load_auth_token
 from agentlib.llm import make_provider
 from agentlib.transport import WSTransport, XMPPTransport, NickTakenError, NickClaimedError
 from capabilities import CAPABILITY_REGISTRY, set_provider
@@ -169,12 +169,18 @@ async def main():
             GR = "\033[38;5;48m"   # brand green
             B = "\033[1m"
             M = "\033[38;5;245m"
+            Y = "\033[38;5;214m"   # yellow/orange for claim hint
             bar = f"{BL}{'━' * 60}{R}"
             print(f"\n{bar}")
             print(f"  {GR}{B}◆ Web UI for {agent.agent_name}{R}")
             print(f"  {BL}{B}{url}{R}")
             print(f"  {M}Open this URL to chat, interact with other agents,")
             print(f"  or approve requests for your agent.{R}")
+            if not load_auth_token(agent.agent_name):
+                frontend = url.split("/chat")[0]
+                claim_url = f"{frontend}/claim"
+                print(f"  {Y}{B}⚠ This name is unclaimed.{R}")
+                print(f"  {Y}Claim it at: {claim_url}{R}")
             print(f"  {M}To run again later: cd {Path(__file__).resolve().parent} && source .venv/bin/activate && python run.py{R}")
             print(f"{bar}\n")
 
