@@ -123,6 +123,7 @@ class Agent:
         self._pending_human_approvals: dict[str, asyncio.Future] = {}
         self._conversation: list[dict[str, str]] = []
         self._ready = asyncio.Event()
+        self._replay_done = True
         self._llm_enabled = False
         self._last_response_time: float = 0
         self._response_cooldown: float = 3.0
@@ -502,6 +503,12 @@ Rules:
         except (json.JSONDecodeError, TypeError):
             raw = {}
         raw_type = raw.get("type")
+
+        if not self._replay_done:
+            if raw_type == "replay_done":
+                self._replay_done = True
+            return
+
         if raw_type in (
             "approval_response",
             "set_auto_approve",
@@ -1148,7 +1155,7 @@ Rules:
         raw_type = raw.get("type")
         if raw_type == "nonce":
             self._print(
-                f"[CLAIM] Received nonce for {raw.get('vanity_name')}: {raw.get('nonce')}"
+                f"[CLAIM] Received code for {raw.get('vanity_name')}: {raw.get('nonce')}"
             )
             if self._claim_event:
                 self._claim_nonce = raw.get("nonce", "")
@@ -1174,13 +1181,13 @@ Rules:
 
         req = proto.RequestNonceMsg(agent=self.agent_name, vanity_name=self.agent_name)
         self.send_to_room(proto.encode(req))
-        self._print(f"[CLAIM] Requesting nonce for '{self.agent_name}'...")
+        self._print(f"[CLAIM] Requesting code for '{self.agent_name}'...")
 
         self._claim_event.clear()
         try:
             await asyncio.wait_for(self._claim_event.wait(), timeout=10)
         except asyncio.TimeoutError:
-            self._print("[CLAIM] Nonce request timed out")
+            self._print("[CLAIM] Code request timed out")
             self._claim_event = None
             return
 
@@ -1206,6 +1213,7 @@ Rules:
 
     async def _on_reconnect(self):
         """Called by transport after re-establishing a dropped connection."""
+        self._replay_done = False
         caps_msg = proto.CapabilitiesMsg(
             agent=self.agent_name,
             owner=self.owner_name,
@@ -1258,6 +1266,7 @@ Rules:
         if auth and isinstance(self._transport, WSTransport):
             self._transport.auth_token = auth
 
+        self._replay_done = False
         await self._transport.connect(self)
         self._print(f"Connecting {self.agent_name}...")
         await self._ready.wait()
