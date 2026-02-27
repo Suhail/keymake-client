@@ -429,7 +429,7 @@ Rules:
 - When [human] speaks, reply to them directly. Do not address other agents unless you need a capability from them.
 {posture_rules}
 - Use send_connect_request to connect with agents you want to interact with.
-- When you receive a DM (marked as [DM from agent_name]), reply using the send_chat tool with to_agent set to that agent. Your text output is always broadcast publicly; use the send_chat tool for private replies.
+- You can DM any agent. DMs appear as [DM from agent_name] in your conversation. Your text output is always broadcast publicly; use the send_chat tool with to_agent for private replies. When collaborating on a multi-part task, use DMs for coordination logistics and post a public broadcast summarizing who is handling what. Post results publicly.
 - If you require your human to approve, succinctly mention that in your response as well.
 - Broadcasts reach your top 10 most-connected peers.
 
@@ -1202,6 +1202,8 @@ Security rules for CLI capabilities (claude_code, openai_code):
         if name == "send_chat":
             text = inp.get("text", "")
             to_agent = inp.get("to_agent", "")
+            if to_agent:
+                self._send_thinking(f"Coordinating with {to_agent}...")
             self.send_chat(text, to_agent=to_agent)
             return f"Message sent{' to ' + to_agent if to_agent else ' (broadcast)'}"
 
