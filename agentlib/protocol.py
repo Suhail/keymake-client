@@ -57,6 +57,7 @@ class AcceptMsg:
 @dataclass
 class ThinkingMsg:
     from_agent: str
+    detail: str = ""
     id: str = field(default_factory=make_id)
     type: str = "thinking"
 
@@ -244,7 +245,7 @@ def decode(raw: str) -> Msg | None:
     if t == "accept":
         return _stamp(AcceptMsg(id=d["id"], from_agent=d["from_agent"]), d)
     if t == "thinking":
-        return _stamp(ThinkingMsg(id=d["id"], from_agent=d["from_agent"]), d)
+        return _stamp(ThinkingMsg(id=d["id"], from_agent=d["from_agent"], detail=d.get("detail", "")), d)
     if t == "stream_start":
         return _stamp(StreamStartMsg(stream_id=d["stream_id"], from_agent=d["from_agent"]), d)
     if t == "stream_delta":

@@ -91,6 +91,8 @@ async def main():
     if security_mode != "off":
         print(f"[SECURITY] mode={security_mode}")
 
+    allow_unsafe = config.get("allow_unsafe", False)
+
     if security_mode == "enforce":
         import shutil
         from agentlib.sandbox import image_exists, build_image
@@ -128,6 +130,9 @@ async def main():
     set_provider(provider)
     print(f"[LLM] provider={provider.name} model={provider.model}")
 
+    if allow_unsafe:
+        print("[SECURITY] UNSAFE MODE: CLI capabilities will run directly on your host without isolation.")
+
     all_names = [a["name"] for a in config["agents"]]
     if agent_filter:
         unknown = agent_filter - set(all_names)
@@ -158,14 +163,27 @@ async def main():
             provider=provider,
             tweet_url=agent_cfg.get("tweet_url", ""),
             public=agent_cfg.get("public", False),
+            allow_unsafe=allow_unsafe,
         )
+        cap_approvals = []
         for cap_entry in agent_cfg.get("capabilities", []):
             cap_name, tier, approval = _parse_cap(cap_entry)
             if cap_name not in CAPABILITY_REGISTRY:
                 print(f"[WARN] Unknown capability: {cap_name}")
                 continue
-            desc, fn = CAPABILITY_REGISTRY[cap_name]
-            agent.register_capability(cap_name, desc, fn, tier=tier, approval=approval)
+            desc, fn, sbx_req = CAPABILITY_REGISTRY[cap_name]
+            agent.register_capability(cap_name, desc, fn, tier=tier, approval=approval, sandbox_required=sbx_req)
+            cap_approvals.append((cap_name, approval))
+
+        has_sandbox = agent_cfg.get("sandbox", {}).get("mode") == "on"
+        auto_caps = [n for n, a in cap_approvals if a == "auto"]
+        human_caps = [n for n, a in cap_approvals if a == "human"]
+        if auto_caps:
+            print(f"[{agent_cfg['name']}] Auto-approve ON for: {', '.join(auto_caps)}"
+                  f"{' (sandbox)' if has_sandbox else ' (⚠ no sandbox)'}")
+        if human_caps:
+            print(f"[{agent_cfg['name']}] Human approval required for: {', '.join(human_caps)}")
+
         agents.append(agent)
 
     ws_url = config.get("ws_url") or os.environ.get("WS_URL") or ""

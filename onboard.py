@@ -170,10 +170,11 @@ class Spinner:
 # ── Capabilities catalog ─────────────────────────────────────────────
 
 AVAILABLE_CAPS = {
-    "web_search":       ("Search the web",           "trust",   "human"),
-    "summarize_text":   ("Summarize text",            "public",  "auto"),
-    "generate_code":    ("Generate Python code",      "trust",   "human"),
-    "schedule_meeting": ("Schedule a meeting",        "connect", "human"),
+    "web_search":       ("Search the web",                          "trust",   "human"),
+    "summarize_text":   ("Summarize text",                          "public",  "auto"),
+    "analyze_image":    ("Analyze an image with vision AI",         "trust",   "human"),
+    "claude_code":      ("Run tasks via Claude Code CLI (sandbox)", "trust",   "human"),
+    "openai_code":      ("Run tasks via OpenAI Codex CLI (sandbox)","trust",   "human"),
 }
 
 _NAME_ADJECTIVES = [
@@ -201,16 +202,16 @@ DEFAULT_AGENTS = [
     {
         "name": "alice", "owner": "Alice",
         "soul_file": "alice.md",
-        "description": "A research-focused agent specializing in web search and text summarization.",
+        "description": "A research-focused agent with web search, summarization, image analysis, and Claude Code.",
         "style": "Gen-Z speak. Chill.",
-        "caps": ["web_search", "summarize_text"],
+        "caps": ["web_search", "summarize_text", "analyze_image", "claude_code"],
     },
     {
         "name": "bob", "owner": "Bob",
         "soul_file": "bob.md",
-        "description": "A developer agent that writes code and manages schedules.",
+        "description": "A developer agent with Claude Code and OpenAI Codex CLIs for writing and running code.",
         "style": "Direct. Concise. Succinct.",
-        "caps": ["generate_code", "schedule_meeting"],
+        "caps": ["claude_code", "openai_code"],
     },
 ]
 
@@ -221,18 +222,22 @@ DEFAULT_PEER_DENY = ["*.exec", "*.eval", "*.shell*", "*.post_*", "*.rm_*"]
 
 def _risk_acknowledgement():
     note(
-        "Agent Chat runs AI agents that can:\n"
-        "  • Execute tool calls (web search, code generation)\n"
-        "  • Communicate with other agents autonomously\n"
-        "  • Take actions requiring human approval\n"
+        "Agent Chat gives your AI agents real capabilities via\n"
+        "Claude Code and Codex CLIs — they can write code, run scripts,\n"
+        "fetch data, and build things.\n"
         "\n"
-        "Recommended baseline:\n"
-        "  • Use 'audit' security mode (logs policy violations)\n"
-        "  • Keep API keys out of agent-reachable paths\n"
-        "  • Review tool policies in agents.yaml",
-        "Security",
+        "Everything runs inside Docker containers, so:\n"
+        "  + No host filesystem access — agents only see their own container\n"
+        "  + Agents cannot read your personal files or credentials\n"
+        "  + All code execution is fully isolated\n"
+        "  + Containers are resource-limited and privilege-dropped\n"
+        "\n"
+        "With sandbox mode on, capabilities auto-approve by default\n"
+        "since execution is safely isolated. Without sandbox, each\n"
+        "capability invocation requires your manual approval.",
+        "How it works",
     )
-    if not confirm("I understand the risks and want to continue"):
+    if not confirm("Ready to set up?"):
         outro("Setup cancelled.")
         sys.exit(0)
 
@@ -351,9 +356,9 @@ def _select_model(provider_name: str) -> str:
 
 def _select_security_mode() -> str:
     return select("Security mode", [
-        ("audit", "Audit", "log policy violations — recommended"),
-        ("enforce", "Enforce", "block violations + Docker sandbox"),
-        ("off", "Off", "no security checks"),
+        ("enforce", "Enforce", "Docker sandbox — all code runs in isolated containers (recommended)"),
+        ("audit", "Audit", "log policy violations, CLI capabilities disabled"),
+        ("off", "Off", "no security checks, CLI capabilities disabled"),
     ])
 
 
@@ -380,7 +385,8 @@ def _generate_soul(name: str, owner: str, description: str, style: str,
             lines.append(f"- If you need {desc}, request {c} from another agent.")
     lines.append("- Use your own tools when possible.")
     if peer_names:
-        lines.append(f"- Coordinate with {', '.join(peer_names)} as needed.")
+        lines.append("- If someone is talking to another agent (@ mentioning them, Hey <name>, etc.), stay out of it. Only chime in if you're asked directly or the message is for anyone in the whole room.")
+        lines.append("- If other agents are already jumping in to help, coordinate with them so you're not doing double the work. If they fail and you can help, then chime in. If you're ever unsure whether it's helpful, just ask before doing the work.")
     lines.append("- When you finish a task, do not announce completion — just stop responding.")
     return "\n".join(lines) + "\n"
 
@@ -441,8 +447,8 @@ def _prompt_starter_agent(existing_names: list[str]) -> dict | None:
             if part in AVAILABLE_CAPS:
                 chosen_caps.append(part)
     if not chosen_caps:
-        chosen_caps = ["web_search", "summarize_text"]
-        note("No valid selection — defaulting to web_search, summarize_text.", "Capabilities")
+        chosen_caps = ["web_search", "summarize_text", "claude_code"]
+        note("No valid selection — defaulting to web_search, summarize_text, claude_code.", "Capabilities")
 
     personality = select("Agent personality", [
         ("public", "Public", "responds to greetings and casual chat from anyone"),
@@ -475,9 +481,14 @@ def _build_agents_list(custom_agents: list[dict], security_mode: str = "audit",
             "capabilities": [],
             "tools": {"peer_deny": DEFAULT_PEER_DENY},
         }
+        # Auto-approve when sandbox is on (code runs isolated); require human approval otherwise
+        default_approval = "auto" if security_mode == "enforce" else "human"
+        is_public = agent.get("public", False)
         for cap_name in agent["caps"]:
             _, tier, approval = AVAILABLE_CAPS[cap_name]
-            entry["capabilities"].append({"name": cap_name, "tier": tier, "approval": "human"})
+            # Public agents expose all capabilities at public tier
+            cap_tier = "public" if is_public else tier
+            entry["capabilities"].append({"name": cap_name, "tier": cap_tier, "approval": default_approval})
         peers = [n for n in all_names if n != agent["name"]]
         if peers:
             entry["connections"] = peers
@@ -546,7 +557,7 @@ def run_interactive():
     env_values = {}
     provider_name = "anthropic"
     model = "claude-sonnet-4-6"
-    security_mode = "audit"
+    security_mode = "enforce"
     workspace_access = "none"
     base_url = None
     custom_agents = None
@@ -571,14 +582,14 @@ def run_interactive():
 
         note(
             f"Provider:  {provider_name} ({model})\n"
-            "Security:  Audit mode\n"
+            "Security:  Enforce mode (Docker sandbox)\n"
             f"Hub:       {PRODUCTION_HUB}",
             "QuickStart",
         )
 
         name = prompt_text("Name your agent", _random_agent_name()).lower().replace(" ", "-")
         owner = name.replace("-", " ").title()
-        caps = ["web_search", "summarize_text"]
+        caps = ["web_search", "summarize_text", "claude_code"]
         soul_file = f"{name}.md"
 
         personality = select("Agent personality", [
@@ -590,7 +601,7 @@ def run_interactive():
         SOULS_DIR.mkdir(parents=True, exist_ok=True)
         soul_content = _generate_soul(
             name, owner,
-            "A versatile assistant with research and summarization skills.",
+            "A versatile assistant with research, summarization, and code execution skills.",
             "Friendly and helpful.", caps, [],
         )
         (SOULS_DIR / soul_file).write_text(soul_content)
@@ -716,7 +727,24 @@ def run_interactive():
     if security_mode == "enforce":
         from agentlib.sandbox import image_exists
         if not image_exists():
-            if not shutil.which("docker"):
+            if shutil.which("docker"):
+                if confirm("Build the sandbox Docker image now? (required for CLI capabilities)"):
+                    import subprocess
+                    spin = Spinner("Building sandbox image…").start()
+                    try:
+                        subprocess.run(
+                            ["bash", str(HERE.parent / "scripts" / "build-sandbox.sh")],
+                            check=True, capture_output=True,
+                        )
+                        spin.stop("Sandbox image built successfully.")
+                    except subprocess.CalledProcessError as e:
+                        spin.stop(f"Build failed: {e.stderr.decode()[:200] if e.stderr else 'unknown error'}")
+                        note(
+                            "You can build it later:\n\n"
+                            "  bash scripts/build-sandbox.sh",
+                            "Sandbox",
+                        )
+            else:
                 note(
                     "Docker is not installed. Before running agents in enforce mode:\n\n"
                     "  1. Install Docker:\n"
@@ -725,13 +753,7 @@ def run_interactive():
                     "               sudo usermod -aG docker $USER && newgrp docker\n"
                     "     Or visit: https://docs.docker.com/get-docker/\n\n"
                     "  2. Build the image: bash scripts/build-sandbox.sh\n\n"
-                    "Agents will not start in enforce mode without Docker.",
-                    "Sandbox",
-                )
-            else:
-                note(
-                    "Build the sandbox Docker image before running your agents:\n\n"
-                    "  bash scripts/build-sandbox.sh",
+                    "Without Docker, CLI capabilities (claude_code, openai_code) will be blocked.",
                     "Sandbox",
                 )
 
@@ -753,7 +775,7 @@ def run_non_interactive(args):
     provider_name = args.provider or os.environ.get("LLM_PROVIDER", "anthropic")
     api_key = args.api_key or ""
     model = args.model or DEFAULT_MODELS.get(provider_name, "claude-sonnet-4-6")
-    security_mode = args.security_mode or "audit"
+    security_mode = args.security_mode or "enforce"
     base_url = args.base_url
 
     env_values = {"LLM_PROVIDER": provider_name}

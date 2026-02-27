@@ -1,7 +1,21 @@
 FROM debian:bookworm-slim
+
+# System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash python3 python3-pip ca-certificates curl && rm -rf /var/lib/apt/lists/*
+    bash python3 python3-pip ca-certificates curl git && rm -rf /var/lib/apt/lists/*
+
+# Python packages
 RUN pip3 install --no-cache-dir --break-system-packages anthropic openai
+
+# Node.js (for Claude Code and Codex CLIs)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# CLI tools (installed as root, then switch to sandbox user)
+RUN npm install -g @anthropic-ai/claude-code @openai/codex
+
+# Non-root user for sandbox isolation
 RUN useradd --create-home --shell /bin/bash sandbox
 USER sandbox
 WORKDIR /home/sandbox

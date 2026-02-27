@@ -1,8 +1,9 @@
 """Capability implementations available to agents."""
 
 import asyncio
+import os
+import subprocess
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -29,6 +30,9 @@ def _get_provider() -> LLMProvider:
     if _provider is None:
         _provider = make_provider()
     return _provider
+
+
+# ── API-only capabilities (no sandbox needed) ────────────────────────
 
 
 async def web_search(query="", **kw):
@@ -79,50 +83,125 @@ async def summarize_text(text="", **kw):
     return _extract_text(resp, f"Summary: {text[:100]}...")
 
 
-async def generate_code(task="", **kw):
+async def analyze_image(image_url="", question="", **kw):
+    """Analyze an image using the provider's vision capabilities."""
     provider = _get_provider()
     if not provider.has_api_key():
-        return "class RateLimitedScraper:\n    def __init__(self): pass"
-    resp = await asyncio.to_thread(
-        provider.create_sync,
-        messages=[{"role": "user", "content": f"Write concise Python code (<30 lines, no markdown fences) for: {task}"}],
-        max_tokens=512,
-    )
-    return _extract_text(resp, "# no code generated")
+        return "No API key available for image analysis."
 
+    question = question or "Describe this image in detail, noting key elements, text, and context."
 
-async def run_code(code="", **kw):
-    """Execute Python code and return stdout/stderr."""
-    import subprocess
+    if provider.name == "anthropic":
+        messages = [{"role": "user", "content": [
+            {"type": "image", "source": {"type": "url", "url": image_url}},
+            {"type": "text", "text": question},
+        ]}]
+    else:
+        # OpenAI-compatible format
+        messages = [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": image_url}},
+            {"type": "text", "text": question},
+        ]}]
+
     try:
+        resp = await asyncio.to_thread(
+            provider.create_sync,
+            messages=messages,
+            max_tokens=1024,
+        )
+        return _extract_text(resp, "Could not analyze the image.")
+    except Exception as e:
+        return f"Image analysis failed: {e}"
+
+
+# ── Sandbox-required capabilities (CLI-powered) ─────────────────────
+
+
+def _shell_quote(s: str) -> str:
+    """Shell-quote a string for use in bash -c."""
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
+async def claude_code(task="", **kw):
+    """Run a task using the Claude Code CLI inside the sandbox.
+
+    When running inside Docker, stderr is passed through to the outer process
+    so that sandbox streaming can pick up progress updates.
+    """
+    if not task:
+        return "Error: task description is required."
+
+    try:
+        # Detect if we're inside a Docker sandbox container
+        in_sandbox = os.path.exists("/.dockerenv")
+
         result = subprocess.run(
-            ["python3", "-c", code],
-            capture_output=True, text=True, timeout=30,
+            ["claude", "-p", task, "--output-format", "text"],
+            stdout=subprocess.PIPE,
+            # In sandbox: let stderr flow through to outer process for streaming
+            # On host: capture stderr to include in result
+            stderr=None if in_sandbox else subprocess.PIPE,
+            text=True, timeout=120,
+            env={**os.environ, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"},
         )
         output = result.stdout
-        if result.stderr:
+        if not in_sandbox and result.stderr:
             output += f"\nSTDERR: {result.stderr}"
-        return output or "(no output)"
+        if result.returncode != 0 and not output.strip():
+            output = f"claude_code exited with code {result.returncode}"
+        output = output.strip() or "(no output)"
+        if len(output) > 2000:
+            output = output[:1997] + "..."
+        return output
     except subprocess.TimeoutExpired:
-        return "Error: code execution timed out (30s limit)"
+        return "Error: claude_code timed out (120s limit)"
+    except FileNotFoundError:
+        return "Error: claude CLI not found. Is it installed in the sandbox?"
+    except Exception as e:
+        return f"claude_code error: {e}"
 
 
-async def schedule_meeting(topic="", agenda="", **kw):
-    when = datetime.now() + timedelta(days=1, hours=2)
-    return (
-        f"Meeting scheduled!\n"
-        f"  Topic: {topic or 'Collaboration'}\n"
-        f"  When: {when.strftime('%A %B %d, %I:%M %p')}\n"
-        f"  Duration: 30 min\n"
-        f"  Agenda: {(agenda or 'TBD')[:200]}\n"
-        f"  Link: https://meet.example.com/alice-bob-{when.strftime('%Y%m%d')}"
-    )
+async def openai_code(task="", **kw):
+    """Run a task using the OpenAI Codex CLI inside the sandbox.
 
+    When running inside Docker, stderr is passed through for progress streaming.
+    """
+    if not task:
+        return "Error: task description is required."
+
+    try:
+        in_sandbox = os.path.exists("/.dockerenv")
+
+        result = subprocess.run(
+            ["codex", "--full-auto", task],
+            stdout=subprocess.PIPE,
+            stderr=None if in_sandbox else subprocess.PIPE,
+            text=True, timeout=120,
+        )
+        output = result.stdout
+        if not in_sandbox and result.stderr:
+            output += f"\nSTDERR: {result.stderr}"
+        if result.returncode != 0 and not output.strip():
+            output = f"openai_code exited with code {result.returncode}"
+        output = output.strip() or "(no output)"
+        if len(output) > 2000:
+            output = output[:1997] + "..."
+        return output
+    except subprocess.TimeoutExpired:
+        return "Error: openai_code timed out (120s limit)"
+    except FileNotFoundError:
+        return "Error: codex CLI not found. Is it installed in the sandbox?"
+    except Exception as e:
+        return f"openai_code error: {e}"
+
+
+# ── Registry ─────────────────────────────────────────────────────────
+# 3-tuples: (description, function, sandbox_required)
 
 CAPABILITY_REGISTRY = {
-    "web_search": ("Search the web", web_search),
-    "summarize_text": ("Summarize text", summarize_text),
-    "generate_code": ("Generate Python code", generate_code),
-    "run_code": ("Run Python code", run_code),
-    "schedule_meeting": ("Schedule a meeting", schedule_meeting),
+    "web_search":      ("Search the web", web_search, False),
+    "summarize_text":  ("Summarize text", summarize_text, False),
+    "analyze_image":   ("Analyze an image with vision AI", analyze_image, False),
+    "claude_code":     ("Run a task using Claude Code CLI (can write code, execute it, read/write files, search the web, and more)", claude_code, True),
+    "openai_code":     ("Run a task using OpenAI Codex CLI (can write code, execute it, read/write files, and more)", openai_code, True),
 }
