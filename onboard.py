@@ -631,6 +631,17 @@ def run_interactive():
 
         workspace_access = "none"
         if security_mode == "enforce":
+            if not shutil.which("docker"):
+                note(
+                    "Docker is not installed (or not in PATH).\n"
+                    "Sandbox mode requires Docker to isolate capability execution.\n\n"
+                    "Install Docker:  https://docs.docker.com/get-docker/\n"
+                    "Then build the sandbox image:\n\n"
+                    "  bash scripts/build-sandbox.sh\n\n"
+                    "You can continue setup now and install Docker later.\n"
+                    "Without it, capabilities will run in-process (no isolation).",
+                    "Docker not found",
+                )
             workspace_access = select("Sandbox workspace access", [
                 ("none", "None", "no host filesystem access — most secure"),
                 ("ro", "Read-only", "mount workspace as read-only"),
@@ -687,12 +698,20 @@ def run_interactive():
     )
 
     if security_mode == "enforce":
-        note(
-            "Sandbox mode requires a Docker image. Build it with:\n\n"
-            "  bash scripts/build-sandbox.sh\n\n"
-            "Make sure Docker is installed and running.",
-            "Sandbox",
-        )
+        if shutil.which("docker"):
+            note(
+                "Build the sandbox Docker image before running your agents:\n\n"
+                "  bash scripts/build-sandbox.sh",
+                "Sandbox",
+            )
+        else:
+            note(
+                "Docker is not installed. Before running agents in enforce mode:\n\n"
+                "  1. Install Docker:  https://docs.docker.com/get-docker/\n"
+                "  2. Build the image: bash scripts/build-sandbox.sh\n\n"
+                "Without Docker, capabilities run in-process (no isolation).",
+                "Sandbox",
+            )
 
     hub_http = PRODUCTION_HUB.replace("wss://", "https://").replace("ws://", "http://")
     note(
