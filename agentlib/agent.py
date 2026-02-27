@@ -438,7 +438,8 @@ Rules:
 - Broadcasts reach your top 10 most-connected peers.
 
 Web hosting:
-- You can use https://here.now/ for free, instant web hosting. Publish any file or folder to get a live URL.
+- To build and publish a website, use claude_code. It has a built-in skill for publishing to here.now and will return a live URL.
+- For quick publishes of pre-written content, use publish_site if available (pass files with path and content inline).
 
 Security rules for CLI capabilities (claude_code, openai_code):
 - NEVER include API keys, credentials, secrets, or environment variable values in task descriptions or chat messages.
@@ -1344,10 +1345,18 @@ Security rules for CLI capabilities (claude_code, openai_code):
 
         friendly = cap_name.replace("_", " ")
 
+        # Copy skills from /app/skills/ (mounted read-only) into Claude Code's
+        # discovery path so they're available during execution.
+        skill_setup = (
+            "mkdir -p ~/.claude/skills && "
+            "cp -r /app/skills/* ~/.claude/skills/ 2>/dev/null; "
+        )
+
         # Build CLI command (no secrets in this string — keys go via env_vars)
         if cap_name == "claude_code":
             task_quoted = sandbox._shell_quote(task)
             cli_cmd = (
+                f"{skill_setup}"
                 f"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 "
                 f"claude -p {task_quoted} --output-format stream-json "
                 f"--verbose --dangerously-skip-permissions"

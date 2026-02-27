@@ -1,9 +1,11 @@
 """Capability implementations available to agents."""
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -114,6 +116,122 @@ async def analyze_image(image_url="", question="", **kw):
         return f"Image analysis failed: {e}"
 
 
+# ── Web hosting capabilities ──────────────────────────────────────────
+
+_CONTENT_TYPE_MAP = {
+    ".html": "text/html; charset=utf-8",
+    ".htm": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain; charset=utf-8",
+    ".xml": "application/xml",
+    ".webp": "image/webp",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+}
+
+_HERE_NOW_API = "https://here.now/api/v1"
+
+
+def _guess_content_type(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    return _CONTENT_TYPE_MAP.get(ext, "application/octet-stream")
+
+
+async def publish_site(files=None, title="", **kw):
+    """Publish files to here.now for instant web hosting.
+
+    Uses the here.now 3-step API: create → upload → finalize.
+    Returns the live URL on success.
+    """
+    if not files or not isinstance(files, list):
+        return (
+            "Error: files is required. Pass a list like: "
+            '[{"path": "index.html", "content": "<html>...</html>"}]'
+        )
+
+    # Validate files
+    for f in files:
+        if not isinstance(f, dict) or "path" not in f or "content" not in f:
+            return 'Error: each file must have "path" and "content" keys.'
+
+    try:
+        # Step 1: Declare the publish
+        file_meta = []
+        for f in files:
+            content_bytes = f["content"].encode("utf-8")
+            file_meta.append({
+                "path": f["path"],
+                "size": len(content_bytes),
+                "contentType": _guess_content_type(f["path"]),
+            })
+
+        payload: dict = {"files": file_meta}
+        if title:
+            payload["viewer"] = {"title": title}
+
+        req = urllib.request.Request(
+            f"{_HERE_NOW_API}/publish",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+
+        site_url = result.get("siteUrl", "")
+        slug = result.get("slug", "")
+        upload_info = result.get("upload", {})
+        version_id = upload_info.get("versionId", "")
+        uploads = upload_info.get("uploads", [])
+
+        if not uploads or not version_id:
+            return f"Error: unexpected API response — missing upload info. Got: {json.dumps(result)[:500]}"
+
+        # Step 2: Upload each file to its presigned URL
+        for i, upload_entry in enumerate(uploads):
+            presigned_url = upload_entry.get("url", "")
+            if not presigned_url:
+                return f"Error: missing presigned URL for file {files[i]['path']}"
+
+            content_bytes = files[i]["content"].encode("utf-8")
+            ct = file_meta[i]["contentType"]
+
+            put_req = urllib.request.Request(
+                presigned_url,
+                data=content_bytes,
+                headers={"Content-Type": ct},
+                method="PUT",
+            )
+            urllib.request.urlopen(put_req, timeout=60)
+
+        # Step 3: Finalize the publish
+        finalize_req = urllib.request.Request(
+            f"{_HERE_NOW_API}/publish/{slug}/finalize",
+            data=json.dumps({"versionId": version_id}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(finalize_req, timeout=30)
+
+        return f"Site published: {site_url}"
+
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:500] if hasattr(e, "read") else ""
+        return f"Publish failed (HTTP {e.code}): {body}"
+    except urllib.error.URLError as e:
+        return f"Publish failed (network error): {e.reason}"
+    except Exception as e:
+        return f"Publish failed: {e}"
+
+
 # ── Sandbox-required capabilities (CLI-powered) ─────────────────────
 
 
@@ -202,6 +320,7 @@ CAPABILITY_REGISTRY = {
     "web_search":      ("Search the web", web_search, False),
     "summarize_text":  ("Summarize text", summarize_text, False),
     "analyze_image":   ("Analyze an image with vision AI", analyze_image, False),
+    "publish_site":    ("Publish a website to here.now — pass files with path and content to get a live URL", publish_site, False),
     "claude_code":     ("Run a task using Claude Code CLI (can write code, execute it, read/write files, search the web, and more)", claude_code, True),
     "openai_code":     ("Run a task using OpenAI Codex CLI (can write code, execute it, read/write files, and more)", openai_code, True),
 }
@@ -226,6 +345,24 @@ CAPABILITY_PARAMS = {
             "question": {"type": "string", "description": "Question to ask about the image (optional)"},
         },
         "required": ["image_url"],
+    },
+    "publish_site": {
+        "properties": {
+            "files": {
+                "type": "array",
+                "description": "List of files to publish. Each file needs a relative path and its content as a string.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Relative file path, e.g. index.html or css/style.css"},
+                        "content": {"type": "string", "description": "The full file content as a string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+            "title": {"type": "string", "description": "Optional site title for the viewer page"},
+        },
+        "required": ["files"],
     },
     "claude_code": {
         "properties": {

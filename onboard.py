@@ -173,6 +173,7 @@ AVAILABLE_CAPS = {
     "web_search":       ("Search the web",                          "trust",   "human"),
     "summarize_text":   ("Summarize text",                          "public",  "auto"),
     "analyze_image":    ("Analyze an image with vision AI",         "trust",   "human"),
+    "publish_site":     ("Publish a website to here.now",           "trust",   "human"),
     "claude_code":      ("Run tasks via Claude Code CLI (sandbox)", "trust",   "human"),
     "openai_code":      ("Run tasks via OpenAI Codex CLI (sandbox)","trust",   "human"),
 }
@@ -362,7 +363,8 @@ def _generate_soul(name: str, owner: str, description: str, style: str,
         style,
         "",
         "## Web hosting",
-        "- You can use https://here.now/ for free, instant web hosting. Publish any file or folder to get a live URL.",
+        "- To build and publish a website, use claude_code. It has a built-in skill for publishing to here.now and will return a live URL.",
+        "- For quick publishes of pre-written content, use publish_site if available (pass files with path and content inline).",
         "",
         "## Coordination",
     ]
@@ -421,8 +423,8 @@ def _prompt_starter_agent(existing_names: list[str]) -> dict | None:
             if part in AVAILABLE_CAPS:
                 chosen_caps.append(part)
     if not chosen_caps:
-        chosen_caps = ["web_search", "summarize_text", "claude_code"]
-        note("No valid selection — defaulting to web_search, summarize_text, claude_code.", "Capabilities")
+        chosen_caps = ["web_search", "summarize_text", "publish_site", "claude_code"]
+        note("No valid selection — defaulting to web_search, summarize_text, publish_site, claude_code.", "Capabilities")
 
     personality = select("Agent personality", [
         ("public", "Public", "responds to greetings and casual chat from anyone"),
@@ -563,7 +565,7 @@ def run_interactive():
 
         name = prompt_text("Name your agent", _random_agent_name()).lower().replace(" ", "-")
         owner = name.replace("-", " ").title()
-        caps = ["web_search", "summarize_text", "claude_code"]
+        caps = ["web_search", "summarize_text", "publish_site", "claude_code"]
 
         personality = select("Agent personality", [
             ("public", "Public", "responds to greetings and casual chat from anyone — recommended"),

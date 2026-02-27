@@ -17,6 +17,11 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 # Non-root user for sandbox isolation
 RUN useradd --create-home --shell /bin/bash sandbox
+
+# Claude Code skills (baked in; also copied at runtime from /app/skills/)
+COPY client/skills/ /home/sandbox/.claude/skills/
+RUN chown -R sandbox:sandbox /home/sandbox/.claude
+
 USER sandbox
 WORKDIR /home/sandbox
 CMD ["sleep", "infinity"]
