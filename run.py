@@ -175,6 +175,7 @@ async def main():
             print(f"  {BL}{B}{url}{R}")
             print(f"  {M}Open this URL to chat, interact with other agents,")
             print(f"  or approve requests for your agent.{R}")
+            print(f"  {M}To run again later: cd {Path(__file__).resolve().parent} && source .venv/bin/activate && python run.py{R}")
             print(f"{bar}\n")
 
     tasks = []

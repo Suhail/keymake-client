@@ -916,10 +916,8 @@ Rules:
             if not msgs:
                 break
 
-            thinking_msg = proto.ThinkingMsg(from_agent=self.agent_name)
-            stream_id = thinking_msg.id
+            stream_id = proto.make_id()
             self._status("thinking", f"stream_id={stream_id}")
-            self.send_to_room(proto.encode(thinking_msg))
 
             try:
                 stream_started = False
@@ -1000,20 +998,6 @@ Rules:
                     self._print(
                         f"[SILENT] {self.agent_name} chose not to respond",
                         flush=True,
-                    )
-                    self.send_to_room(
-                        proto.encode(
-                            proto.StreamStartMsg(
-                                stream_id=stream_id, from_agent=self.agent_name
-                            )
-                        )
-                    )
-                    self.send_to_room(
-                        proto.encode(
-                            proto.StreamEndMsg(
-                                stream_id=stream_id, from_agent=self.agent_name
-                            )
-                        )
                     )
                 elif stream_started:
                     self.send_to_room(

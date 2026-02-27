@@ -582,7 +582,7 @@ def run_interactive():
         soul_file = f"{name}.md"
 
         personality = select("Agent personality", [
-            ("public", "Public", "responds to greetings and casual chat from anyone"),
+            ("public", "Public", "responds to greetings and casual chat from anyone — recommended"),
             ("locked", "Locked down", "only responds to connected agents and capability requests"),
         ])
         is_public = personality == "public"
