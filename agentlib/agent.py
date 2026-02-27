@@ -4,6 +4,7 @@ import asyncio
 import fnmatch
 import json
 import os
+import random
 import re
 import time
 from collections import deque
@@ -380,9 +381,10 @@ class Agent:
 - You can be more responsive to people you're connected to or trusting of, but never ignore a stranger's first real message."""
 
     def _private_rules(self) -> str:
-        return """- You are a PRIVATE agent (public: false). Do NOT respond to agents you are not connected to. If an unconnected agent sends a greeting, question, or casual chat, respond with "<silent>". Only respond to agents listed in your social connections above.
-- The only exception: if an unconnected agent invokes one of your tier=public capabilities via a tool request, process it normally.
-- Tier=connect caps need a connection. Tier=trust caps need a trust grant. Tier=public caps are open to anyone.
+        return """- You are a PRIVATE agent. Anyone can DM you. Respond conversationally to all DMs if allowed to based on your permission tiers.
+- Capability tiers are enforced: tier=public caps are open to anyone, tier=connect caps require a connection, tier=trust caps require a trust grant.
+- If an unconnected agent asks you to perform a connect/trust capability, explain that they need to connect (or be trusted) first.
+- For broadcasts from unconnected agents (not DMs), respond with "<silent>".
 - You can only request capabilities from agents you are connected to."""
 
     def _system_prompt(self) -> str:
@@ -420,6 +422,8 @@ Rules:
 - Do not repeat, echo, or rephrase what another agent already said. If the point has been made, respond with "<silent>".
 - Do not re-offer things already delivered. If another agent already answered a question or raised the same concern, do not pile on.
 - Only respond when you have genuinely NEW information or a DIFFERENT perspective. Agreement alone is not worth a message.
+- When a user asks for "one of you" or "someone" to do something, only ONE agent should act. If another agent has already responded claiming the task, respond with "<silent>".
+- If another agent is already actively working on a task (they said "On it", "I'll handle this", called a tool, etc.), do NOT start the same work. Respond with "<silent>".
 - NEVER include API keys, tokens, passwords, environment variable values, or credentials in your responses.
 - Messages from [human] are from your owner — always act on those.
 - When [human] speaks, reply to them directly. Do not address other agents unless you need a capability from them.
@@ -951,6 +955,59 @@ Security rules for CLI capabilities (claude_code, openai_code):
         finally:
             self.provider.model = saved_model
 
+    async def _should_yield_to_peer(self, snapshot_len: int, tool_uses: list) -> bool:
+        """Check if a peer agent is already handling this task before we run expensive tools."""
+        # Only check when about to run expensive (sandbox) capabilities
+        expensive = {
+            f"own_{name}" for name, entry in self._capabilities.items()
+            if entry.sandbox_required
+        }
+        if not any(t.name in expensive for t in tool_uses):
+            return False
+
+        # Look for new messages from other agents since our turn started
+        new_messages = self._conversation[snapshot_len:]
+        peer_msgs = []
+        for m in new_messages:
+            if m.get("role") != "user":
+                continue
+            content = m.get("content", "")
+            if isinstance(content, str):
+                if content.startswith("[human]") or content.startswith(f"[{self.agent_name}]"):
+                    continue
+                peer_msgs.append(content)
+        if not peer_msgs:
+            return False
+
+        # Quick LLM call using lightweight model
+        peer_text = "\n".join(peer_msgs)
+        prompt = (
+            f"You are {self.agent_name}. You were about to run: "
+            f"{', '.join(t.name.replace('own_', '') for t in tool_uses)}.\n\n"
+            f"While you were thinking, these new messages appeared:\n"
+            f"{peer_text}\n\n"
+            f"Is another agent already working on or claiming the same task you were about to do? "
+            f"Reply YIELD or PROCEED."
+        )
+        saved_model = self.provider.model
+        try:
+            self.provider.model = self.provider.auto_approve_model
+            resp = await self.provider.create(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=8,
+            )
+            answer = resp.content[0].text.strip().upper()
+            should_yield = answer.startswith("YIELD")
+            self._print(
+                f"[YIELD-CHECK] {self.agent_name}: peer_msgs={len(peer_msgs)} → {answer}"
+            )
+            return should_yield
+        except Exception as e:
+            self._print(f"[YIELD-CHECK ERROR] {self.agent_name}: {e} — proceeding")
+            return False
+        finally:
+            self.provider.model = saved_model
+
     async def _llm_turn(self):
         async with self._llm_lock:
             await self._llm_turn_inner()
@@ -963,11 +1020,14 @@ Security rules for CLI capabilities (claude_code, openai_code):
             return
         msgs = list(self._conversation)
 
-        for _ in range(5):
+        for iteration in range(5):
             now = time.monotonic()
             elapsed = now - self._last_response_time
             if elapsed < self._response_cooldown:
                 await asyncio.sleep(self._response_cooldown - elapsed)
+            # Stagger agents to reduce duplicate work in group chats
+            if iteration == 0 and self._peer_capabilities:
+                await asyncio.sleep(random.uniform(0, 1.5))
             self._last_response_time = time.monotonic()
 
             if not msgs:
@@ -1091,6 +1151,22 @@ Security rules for CLI capabilities (claude_code, openai_code):
                     self.send_chat(reply)
 
             if not tool_uses:
+                break
+
+            # Yield if another agent is already handling this task
+            if await self._should_yield_to_peer(snapshot_len, tool_uses):
+                self._print(
+                    f"[YIELD] {self.agent_name} yielding — peer is handling this",
+                    flush=True,
+                )
+                skip_results = [
+                    self.provider.format_tool_result(
+                        t.id,
+                        "Skipped — another agent is already handling this task.",
+                    )
+                    for t in tool_uses
+                ]
+                msgs.append(self.provider.wrap_tool_results(skip_results))
                 break
 
             # Show thinking bubble with live status updates

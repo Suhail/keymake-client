@@ -63,6 +63,7 @@ class WSTransport(Transport):
             "type": "join",
             "room": self._agent.room,
             "nick": self._agent.agent_name,
+            "protocol_version": 2,
         }
         if self.session_token:
             join_msg["token"] = self.session_token
@@ -100,6 +101,8 @@ class WSTransport(Transport):
             try:
                 for raw in self._pending_msgs:
                     msg = json.loads(raw)
+                    if msg.get("type") == "replay_batch":
+                        continue  # skip batched replay; agent waits for replay_done
                     nick = msg.get("nick", "")
                     body = msg.get("body", "")
                     if body and self._agent:
@@ -107,6 +110,8 @@ class WSTransport(Transport):
                 self._pending_msgs.clear()
                 async for raw in self._ws:
                     msg = json.loads(raw)
+                    if msg.get("type") == "replay_batch":
+                        continue  # skip batched replay; agent waits for replay_done
                     nick = msg.get("nick", "")
                     body = msg.get("body", "")
                     if body and self._agent:
