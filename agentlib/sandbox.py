@@ -8,7 +8,8 @@ from pathlib import Path
 
 DEFAULT_IMAGE = "agentchat-sandbox:latest"
 CONTAINER_PREFIX = "agentchat-sbx"
-WORKSPACE_DIR = Path(__file__).resolve().parent.parent
+CLIENT_DIR = Path(__file__).resolve().parent.parent
+WORKSPACE_DIR = CLIENT_DIR
 
 
 def _docker_available() -> bool:
@@ -60,6 +61,9 @@ async def ensure_container(agent_name: str, config: dict) -> str:
         "--security-opt=no-new-privileges",
     ]
 
+    # Always mount client code read-only so capabilities can be imported
+    cmd += ["-v", f"{CLIENT_DIR}:/app:ro"]
+
     if workspace_access == "rw":
         cmd += ["-v", f"{WORKSPACE_DIR}:/workspace:rw"]
     elif workspace_access == "ro":
@@ -87,15 +91,30 @@ async def exec_in_sandbox(agent_name: str, command: str) -> str:
 
 
 async def exec_capability_in_sandbox(
-    agent_name: str, cap_name: str, params: dict, api_key: str | None = None,
+    agent_name: str,
+    cap_name: str,
+    params: dict,
+    api_key: str | None = None,
+    provider_name: str = "anthropic",
+    model: str | None = None,
 ) -> str:
-    """Serialize a capability call as a Python script and run it in the sandbox."""
+    """Import and run a capability function inside the sandbox container."""
     params_json = json.dumps(params)
     script = (
-        "import json, sys\n"
+        "import asyncio, json, sys, os\n"
+        "sys.path.insert(0, '/app')\n"
         f"params = json.loads({params_json!r})\n"
-        f"print(f'[SANDBOX] Running {cap_name} with {{params}}')\n"
-        f"print(json.dumps({{'status': 'ok', 'capability': {cap_name!r}, 'params': params}}))\n"
+        "from agentlib.llm import make_provider\n"
+        "from capabilities import CAPABILITY_REGISTRY, set_provider\n"
+        f"provider = make_provider({provider_name!r}, model={model!r})\n"
+        "set_provider(provider)\n"
+        f"entry = CAPABILITY_REGISTRY.get({cap_name!r})\n"
+        "if not entry:\n"
+        f"    print('Unknown capability: {cap_name}')\n"
+        "    sys.exit(1)\n"
+        "desc, fn = entry\n"
+        "result = asyncio.run(fn(**params))\n"
+        "print(result)\n"
     )
     env_cmd = ""
     if api_key:

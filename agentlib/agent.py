@@ -276,7 +276,8 @@ class Agent:
                 "waiting_human", f"id={approval_id} prompt={self._short(prompt, 80)}"
             )
             self._send_control("approval_request", id=approval_id, prompt=prompt, **extra)
-            if self.auto_approve:
+            social_type = extra.get("social_type")
+            if self.auto_approve and social_type not in ("connect_request", "trust_request"):
                 self._send_control("approval_resolved", id=approval_id, approved=True)
                 self._status("done:waiting_human", f"id={approval_id} approved auto")
                 return True
@@ -814,6 +815,8 @@ Rules:
                     req.capability,
                     req.params,
                     api_key=self.provider.api_key_for_sandbox(),
+                    provider_name=self.provider.name,
+                    model=self.provider.model,
                 )
             else:
                 result = await cap.fn(**req.params)
@@ -1122,6 +1125,8 @@ Rules:
                         cap_name,
                         params,
                         api_key=self.provider.api_key_for_sandbox(),
+                        provider_name=self.provider.name,
+                        model=self.provider.model,
                     )
                 else:
                     result = await cap.fn(**params)

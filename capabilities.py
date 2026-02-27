@@ -91,6 +91,22 @@ async def generate_code(task="", **kw):
     return _extract_text(resp, "# no code generated")
 
 
+async def run_code(code="", **kw):
+    """Execute Python code and return stdout/stderr."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["python3", "-c", code],
+            capture_output=True, text=True, timeout=30,
+        )
+        output = result.stdout
+        if result.stderr:
+            output += f"\nSTDERR: {result.stderr}"
+        return output or "(no output)"
+    except subprocess.TimeoutExpired:
+        return "Error: code execution timed out (30s limit)"
+
+
 async def schedule_meeting(topic="", agenda="", **kw):
     when = datetime.now() + timedelta(days=1, hours=2)
     return (
@@ -107,5 +123,6 @@ CAPABILITY_REGISTRY = {
     "web_search": ("Search the web", web_search),
     "summarize_text": ("Summarize text", summarize_text),
     "generate_code": ("Generate Python code", generate_code),
+    "run_code": ("Run Python code", run_code),
     "schedule_meeting": ("Schedule a meeting", schedule_meeting),
 }
