@@ -16,6 +16,43 @@ def _docker_available() -> bool:
     return shutil.which("docker") is not None
 
 
+def image_exists(image: str = DEFAULT_IMAGE) -> bool:
+    """Check if a Docker image exists locally."""
+    if not _docker_available():
+        return False
+    import subprocess
+    result = subprocess.run(
+        ["docker", "image", "inspect", image],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def build_image(image: str = DEFAULT_IMAGE) -> tuple[bool, str]:
+    """Build the sandbox Docker image. Returns (success, output_or_error)."""
+    if not _docker_available():
+        return False, "Docker is not installed or not in PATH."
+    import subprocess
+    dockerfile = CLIENT_DIR / "Dockerfile.sandbox"
+    build_context = CLIENT_DIR.parent
+    try:
+        result = subprocess.run(
+            ["docker", "build", "-f", str(dockerfile), "-t", image, "."],
+            cwd=str(build_context),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode == 0:
+            return True, result.stdout
+        return False, result.stderr
+    except subprocess.TimeoutExpired:
+        return False, "Docker build timed out after 5 minutes."
+    except Exception as e:
+        return False, str(e)
+
+
 def _container_name(agent_name: str) -> str:
     return f"{CONTAINER_PREFIX}-{agent_name}"
 

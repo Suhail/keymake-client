@@ -91,6 +91,39 @@ async def main():
     if security_mode != "off":
         print(f"[SECURITY] mode={security_mode}")
 
+    if security_mode == "enforce":
+        import shutil
+        from agentlib.sandbox import image_exists, build_image
+        agents_to_run = [
+            a for a in config["agents"]
+            if not agent_filter or a["name"] in agent_filter
+        ]
+        needs_sandbox = any(
+            a.get("sandbox", {}).get("mode") == "on" for a in agents_to_run
+        )
+        if needs_sandbox:
+            if not shutil.which("docker"):
+                print("[ERROR] Enforce mode requires Docker but 'docker' is not in PATH.")
+                print()
+                print("        Install Docker:")
+                print("          macOS:  brew install --cask docker")
+                print("          Ubuntu: sudo apt-get update && sudo apt-get install -y docker.io")
+                print("                  sudo usermod -aG docker $USER && newgrp docker")
+                print()
+                print("        Or visit: https://docs.docker.com/get-docker/")
+                sys.exit(1)
+            if not image_exists():
+                print("[SANDBOX] Image not found. Building agentchat-sandbox:latest…")
+                ok, output = build_image()
+                if ok:
+                    print("[SANDBOX] Image built successfully.")
+                else:
+                    print("[ERROR] Failed to build sandbox image:")
+                    for line in output.strip().splitlines()[-10:]:
+                        print(f"         {line}")
+                    print("\n        To build manually: bash scripts/build-sandbox.sh")
+                    sys.exit(1)
+
     provider = make_provider_from_config(config)
     set_provider(provider)
     print(f"[LLM] provider={provider.name} model={provider.model}")

@@ -1243,8 +1243,14 @@ Rules:
                 self._print(
                     f"[SANDBOX] Failed to start container for {self.agent_name}: {e}"
                 )
-                self._print("[SANDBOX] Falling back to in-process execution")
-                self.sandbox_config["mode"] = "off"
+                raise SystemExit(
+                    f"Cannot start {self.agent_name}: enforce mode requires a working "
+                    f"Docker sandbox. Fix Docker or set sandbox.mode to 'off' in agents.yaml.\n"
+                    f"  Install Docker:\n"
+                    f"    macOS:  brew install --cask docker\n"
+                    f"    Ubuntu: sudo apt-get update && sudo apt-get install -y docker.io\n"
+                    f"            sudo usermod -aG docker $USER && newgrp docker"
+                )
 
         auth = load_auth_token(self.agent_name)
         if auth and isinstance(self._transport, WSTransport):

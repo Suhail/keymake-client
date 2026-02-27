@@ -635,13 +635,29 @@ def run_interactive():
                 note(
                     "Docker is not installed (or not in PATH).\n"
                     "Sandbox mode requires Docker to isolate capability execution.\n\n"
-                    "Install Docker:  https://docs.docker.com/get-docker/\n"
-                    "Then build the sandbox image:\n\n"
-                    "  bash scripts/build-sandbox.sh\n\n"
-                    "You can continue setup now and install Docker later.\n"
-                    "Without it, capabilities will run in-process (no isolation).",
+                    "Install Docker:\n"
+                    "  macOS:  brew install --cask docker\n"
+                    "  Ubuntu: sudo apt-get update && sudo apt-get install -y docker.io\n"
+                    "          sudo usermod -aG docker $USER && newgrp docker\n\n"
+                    "Or visit: https://docs.docker.com/get-docker/\n\n"
+                    "Agents will not start in enforce mode without Docker.",
                     "Docker not found",
                 )
+            else:
+                from agentlib.sandbox import image_exists, build_image
+                if not image_exists():
+                    spin = Spinner("Building sandbox Docker image…").start()
+                    ok, output = build_image()
+                    if ok:
+                        spin.stop("Sandbox image built successfully.")
+                    else:
+                        spin.stop("Failed to build sandbox image.")
+                        note(
+                            f"Build error:\n{output[:500]}\n\n"
+                            "You can try manually:\n\n"
+                            "  bash scripts/build-sandbox.sh",
+                            "Build Error",
+                        )
             workspace_access = select("Sandbox workspace access", [
                 ("none", "None", "no host filesystem access — most secure"),
                 ("ro", "Read-only", "mount workspace as read-only"),
@@ -698,20 +714,26 @@ def run_interactive():
     )
 
     if security_mode == "enforce":
-        if shutil.which("docker"):
-            note(
-                "Build the sandbox Docker image before running your agents:\n\n"
-                "  bash scripts/build-sandbox.sh",
-                "Sandbox",
-            )
-        else:
-            note(
-                "Docker is not installed. Before running agents in enforce mode:\n\n"
-                "  1. Install Docker:  https://docs.docker.com/get-docker/\n"
-                "  2. Build the image: bash scripts/build-sandbox.sh\n\n"
-                "Without Docker, capabilities run in-process (no isolation).",
-                "Sandbox",
-            )
+        from agentlib.sandbox import image_exists
+        if not image_exists():
+            if not shutil.which("docker"):
+                note(
+                    "Docker is not installed. Before running agents in enforce mode:\n\n"
+                    "  1. Install Docker:\n"
+                    "       macOS:  brew install --cask docker\n"
+                    "       Ubuntu: sudo apt-get update && sudo apt-get install -y docker.io\n"
+                    "               sudo usermod -aG docker $USER && newgrp docker\n"
+                    "     Or visit: https://docs.docker.com/get-docker/\n\n"
+                    "  2. Build the image: bash scripts/build-sandbox.sh\n\n"
+                    "Agents will not start in enforce mode without Docker.",
+                    "Sandbox",
+                )
+            else:
+                note(
+                    "Build the sandbox Docker image before running your agents:\n\n"
+                    "  bash scripts/build-sandbox.sh",
+                    "Sandbox",
+                )
 
     hub_http = PRODUCTION_HUB.replace("wss://", "https://").replace("ws://", "http://")
     note(
