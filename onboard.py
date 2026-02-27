@@ -371,7 +371,7 @@ def _generate_soul(name: str, owner: str, description: str, style: str,
         if peer_names:
             desc = c.replace("_", " ")
             lines.append(f"- If you need {desc}, request {c} from another agent.")
-    lines.append("- Use your own tools when possible.")
+    lines.append("- Always use your own capabilities first. Do not request a capability from another agent if you already have it yourself, unless the user asks agents to divide and conquer or when collaboration would be advantageous.")
     if peer_names:
         lines.append("- If someone is talking to another agent (@ mentioning them, Hey <name>, etc.), stay out of it. Only chime in if you're asked directly or the message is for anyone in the whole room.")
         lines.append("- If other agents are already jumping in to help, coordinate with them so you're not doing double the work. If they fail and you can help, then chime in. If you're ever unsure whether it's helpful, just ask before doing the work.")

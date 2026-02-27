@@ -21,7 +21,7 @@ load_dotenv()
 from agentlib.agent import Agent, DEFAULT_RATE_LIMIT, load_auth_token
 from agentlib.llm import make_provider
 from agentlib.transport import WSTransport, XMPPTransport, NickTakenError, NickClaimedError
-from capabilities import CAPABILITY_REGISTRY, set_provider
+from capabilities import CAPABILITY_REGISTRY, CAPABILITY_PARAMS, set_provider
 
 
 def load_config(path=None):
@@ -172,7 +172,7 @@ async def main():
                 print(f"[WARN] Unknown capability: {cap_name}")
                 continue
             desc, fn, sbx_req = CAPABILITY_REGISTRY[cap_name]
-            agent.register_capability(cap_name, desc, fn, tier=tier, approval=approval, sandbox_required=sbx_req)
+            agent.register_capability(cap_name, desc, fn, tier=tier, approval=approval, sandbox_required=sbx_req, params_schema=CAPABILITY_PARAMS.get(cap_name))
             cap_approvals.append((cap_name, approval))
 
         has_sandbox = agent_cfg.get("sandbox", {}).get("mode") == "on"

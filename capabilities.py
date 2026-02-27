@@ -205,3 +205,38 @@ CAPABILITY_REGISTRY = {
     "claude_code":     ("Run a task using Claude Code CLI (can write code, execute it, read/write files, search the web, and more)", claude_code, True),
     "openai_code":     ("Run a task using OpenAI Codex CLI (can write code, execute it, read/write files, and more)", openai_code, True),
 }
+
+# JSON Schema for each capability's params object, so the LLM knows what to pass.
+CAPABILITY_PARAMS = {
+    "web_search": {
+        "properties": {
+            "query": {"type": "string", "description": "The search query"},
+        },
+        "required": ["query"],
+    },
+    "summarize_text": {
+        "properties": {
+            "text": {"type": "string", "description": "The text to summarize"},
+        },
+        "required": ["text"],
+    },
+    "analyze_image": {
+        "properties": {
+            "image_url": {"type": "string", "description": "URL of the image to analyze"},
+            "question": {"type": "string", "description": "Question to ask about the image (optional)"},
+        },
+        "required": ["image_url"],
+    },
+    "claude_code": {
+        "properties": {
+            "task": {"type": "string", "description": "The task description for Claude Code to execute"},
+        },
+        "required": ["task"],
+    },
+    "openai_code": {
+        "properties": {
+            "task": {"type": "string", "description": "The task description for Codex to execute"},
+        },
+        "required": ["task"],
+    },
+}

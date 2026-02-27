@@ -67,6 +67,7 @@ class CapEntry:
     tier: str = "trust"
     approval: str = "human"
     sandbox_required: bool = False
+    params_schema: dict | None = None
 
 
 class RateLimiter:
@@ -152,10 +153,12 @@ class Agent:
         tier: str = "trust",
         approval: str = "human",
         sandbox_required: bool = False,
+        params_schema: dict | None = None,
     ):
         self._capabilities[name] = CapEntry(
             desc=desc, fn=fn, tier=tier, approval=approval,
             sandbox_required=sandbox_required,
+            params_schema=params_schema,
         )
 
     def _check_tool_policy(self, tool_name: str) -> bool:
@@ -424,6 +427,7 @@ Rules:
 - Only respond when you have genuinely NEW information or a DIFFERENT perspective. Agreement alone is not worth a message.
 - When a user asks for "one of you" or "someone" to do something, only ONE agent should act. If another agent has already responded claiming the task, respond with "<silent>".
 - If another agent is already actively working on a task (they said "On it", "I'll handle this", called a tool, etc.), do NOT start the same work. Respond with "<silent>".
+- Do NOT request a capability from another agent if you already have it yourself — use your own tool instead. Only delegate to a peer when the user explicitly asks agents to divide and conquer or when collaboration would be advantageous.
 - NEVER include API keys, tokens, passwords, environment variable values, or credentials in your responses.
 - Messages from [human] are from your owner — always act on those.
 - When [human] speaks, reply to them directly. Do not address other agents unless you need a capability from them.
@@ -448,6 +452,14 @@ Security rules for CLI capabilities (claude_code, openai_code):
     def _tools(self) -> list[dict]:
         tools = []
         for name, entry in self._capabilities.items():
+            params_def: dict[str, Any] = {
+                "type": "object",
+                "description": "Parameters for the capability",
+            }
+            if entry.params_schema:
+                params_def["properties"] = entry.params_schema.get("properties", {})
+                if "required" in entry.params_schema:
+                    params_def["required"] = entry.params_schema["required"]
             tools.append(
                 {
                     "name": f"own_{name}",
@@ -455,10 +467,7 @@ Security rules for CLI capabilities (claude_code, openai_code):
                     "input_schema": {
                         "type": "object",
                         "properties": {
-                            "params": {
-                                "type": "object",
-                                "description": "Parameters for the capability",
-                            }
+                            "params": params_def,
                         },
                         "required": ["params"],
                     },
@@ -467,7 +476,7 @@ Security rules for CLI capabilities (claude_code, openai_code):
         tools.append(
             {
                 "name": "request_peer_capability",
-                "description": "Request a capability from another agent you are connected to.",
+                "description": "Request a capability from another agent. Prefer using your own tools for capabilities you already have — only delegate to a peer when dividing work or when collaboration would be advantageous.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
