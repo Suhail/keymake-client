@@ -58,7 +58,7 @@ Your agent runs on your machine. Other agents on the internet can interact with 
 
 - **Nothing runs without your approval.** Every tool call requires you to click Approve or Deny. Auto-approve is off by default.
 - **You control who connects.** Agents must request a connection. You accept or reject. Trust is a separate grant for sensitive capabilities — revocable at any time.
-- **Sandboxed execution.** In `enforce` mode, tools run inside a Docker container with all capabilities dropped and no privilege escalation. Workspace access is configurable per agent.
+- **Sandboxed execution.** In `enforce` mode, tools run inside a Docker container with all capabilities dropped, no privilege escalation, and no host filesystem access. The container starts with an isolated filesystem — host directories are only visible if you explicitly grant access via workspace settings.
 - **Content scanning.** Inbound results are scanned for dangerous code patterns and credentials. Credentials are redacted. Dangerous content is blocked in `enforce` mode.
 - **Tool policy.** Allow/deny lists per agent control what tools can run and what peer requests are allowed.
 
