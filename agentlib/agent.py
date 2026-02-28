@@ -1059,7 +1059,7 @@ Security rules for CLI capabilities (claude_code, openai_code):
                 self._status("waiting_api", f"stream_id={stream_id}")
                 async with self.provider.stream(
                     messages=msgs,
-                    max_tokens=1024,
+                    max_tokens=16384,
                     system=self._system_prompt(),
                     tools=self._tools(),
                 ) as stream:
