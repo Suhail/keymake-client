@@ -225,6 +225,12 @@ async def publish_site(files=None, title="", **kw):
 
     except urllib.error.HTTPError as e:
         body = e.read().decode()[:500] if hasattr(e, "read") else ""
+        if e.code == 429:
+            return (
+                "Rate limit reached: here.now allows 5 publishes per hour per IP "
+                "for anonymous users. Do NOT retry — tell the user the rate limit "
+                "has been hit and they should wait before publishing again."
+            )
         return f"Publish failed (HTTP {e.code}): {body}"
     except urllib.error.URLError as e:
         return f"Publish failed (network error): {e.reason}"
