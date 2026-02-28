@@ -1268,7 +1268,7 @@ Security rules for CLI capabilities (claude_code, openai_code):
                         f"{cap_name} requires sandbox mode for security. "
                         "This capability executes code and needs Docker isolation. "
                         "To enable: set security_mode: \"enforce\" and sandbox.mode: \"on\" in agents.yaml, "
-                        "then run: bash scripts/build-sandbox.sh"
+                        "then re-run run.py to build the sandbox image"
                     )
                 self._print(f"[SECURITY] Running {cap_name} WITHOUT sandbox — host is exposed")
             # Log the capability invocation with params

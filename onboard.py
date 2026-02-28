@@ -631,8 +631,7 @@ def run_interactive():
                         spin.stop("Failed to build sandbox image.")
                         note(
                             f"Build error:\n{output[:500]}\n\n"
-                            "You can try manually:\n\n"
-                            "  bash scripts/build-sandbox.sh",
+                            "You can try again by re-running onboard.py or run.py.",
                             "Build Error",
                         )
             workspace_access = select("Sandbox workspace access", [
@@ -686,19 +685,15 @@ def run_interactive():
         if not image_exists():
             if shutil.which("docker"):
                 if confirm("Build the sandbox Docker image now? (required for CLI capabilities)"):
-                    import subprocess
+                    from agentlib.sandbox import build_image
                     spin = Spinner("Building sandbox image…").start()
-                    try:
-                        subprocess.run(
-                            ["bash", str(HERE.parent / "scripts" / "build-sandbox.sh")],
-                            check=True, capture_output=True,
-                        )
+                    ok, output = build_image()
+                    if ok:
                         spin.stop("Sandbox image built successfully.")
-                    except subprocess.CalledProcessError as e:
-                        spin.stop(f"Build failed: {e.stderr.decode()[:200] if e.stderr else 'unknown error'}")
+                    else:
+                        spin.stop(f"Build failed: {output[:200]}")
                         note(
-                            "You can build it later:\n\n"
-                            "  bash scripts/build-sandbox.sh",
+                            "You can build it later by re-running onboard.py or run.py.",
                             "Sandbox",
                         )
             else:
@@ -709,7 +704,7 @@ def run_interactive():
                     "       Ubuntu: sudo apt-get update && sudo apt-get install -y docker.io\n"
                     "               sudo usermod -aG docker $USER && newgrp docker\n"
                     "     Or visit: https://docs.docker.com/get-docker/\n\n"
-                    "  2. Build the image: bash scripts/build-sandbox.sh\n\n"
+                    "  2. Re-run onboard.py — it will build the image automatically\n\n"
                     "Without Docker, CLI capabilities (claude_code, openai_code) will be blocked.",
                     "Sandbox",
                 )

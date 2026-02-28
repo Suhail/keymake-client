@@ -31,15 +31,31 @@ def image_exists(image: str = DEFAULT_IMAGE) -> bool:
 
 
 def build_image(image: str = DEFAULT_IMAGE) -> tuple[bool, str]:
-    """Build the sandbox Docker image. Returns (success, output_or_error)."""
+    """Build the sandbox Docker image. Returns (success, output_or_error).
+
+    Auto-detects whether we're in the monorepo (client/ is a subdirectory) or
+    the standalone keymake-client repo (client/ contents are the repo root) and
+    adjusts the build context and skills path accordingly.
+    """
     if not _docker_available():
         return False, "Docker is not installed or not in PATH."
     import subprocess
+
+    parent_dir = CLIENT_DIR.parent
+    is_monorepo = (parent_dir / "client").is_dir()
+
+    if is_monorepo:
+        build_context = parent_dir
+        skills_path = "client/skills"
+    else:
+        build_context = CLIENT_DIR
+        skills_path = "skills"
+
     dockerfile = CLIENT_DIR / "Dockerfile.sandbox"
-    build_context = CLIENT_DIR.parent
     try:
         result = subprocess.run(
-            ["docker", "build", "-f", str(dockerfile), "-t", image, "."],
+            ["docker", "build", "-f", str(dockerfile), "-t", image,
+             "--build-arg", f"SKILLS_PATH={skills_path}", "."],
             cwd=str(build_context),
             capture_output=True,
             text=True,

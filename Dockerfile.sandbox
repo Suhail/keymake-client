@@ -19,7 +19,8 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex
 RUN useradd --create-home --shell /bin/bash sandbox
 
 # Claude Code skills (baked in; also copied at runtime from /app/skills/)
-COPY client/skills/ /home/sandbox/.claude/skills/
+ARG SKILLS_PATH=client/skills
+COPY ${SKILLS_PATH}/ /home/sandbox/.claude/skills/
 RUN chown -R sandbox:sandbox /home/sandbox/.claude
 
 USER sandbox

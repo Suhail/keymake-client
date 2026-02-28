@@ -123,7 +123,7 @@ async def main():
                     print("[ERROR] Failed to build sandbox image:")
                     for line in output.strip().splitlines()[-10:]:
                         print(f"         {line}")
-                    print("\n        To build manually: bash scripts/build-sandbox.sh")
+                    print("\n        To build manually: python -c 'from agentlib.sandbox import build_image; build_image()'")
                     sys.exit(1)
 
     provider = make_provider_from_config(config)
