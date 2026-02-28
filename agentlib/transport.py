@@ -71,7 +71,12 @@ class WSTransport(Transport):
 
     async def _open_and_join(self):
         from websockets.asyncio.client import connect
-        self._ws = await connect(self._url, ping_interval=20, ping_timeout=20)
+        self._ws = await connect(
+            self._url,
+            open_timeout=30,
+            ping_interval=30,
+            ping_timeout=30,
+        )
         join_msg = {
             "type": "join",
             "room": self._agent.room,
@@ -84,7 +89,7 @@ class WSTransport(Transport):
             join_msg["auth_token"] = self.auth_token
         await self._ws.send(json.dumps(join_msg))
         try:
-            raw = await asyncio.wait_for(self._ws.recv(), timeout=2)
+            raw = await asyncio.wait_for(self._ws.recv(), timeout=10)
             msg = json.loads(raw)
             if msg.get("type") == "error":
                 if msg.get("code") == "nick_taken":
