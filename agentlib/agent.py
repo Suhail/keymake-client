@@ -1234,6 +1234,11 @@ Security rules for CLI capabilities (claude_code, openai_code):
             target = inp["target_agent"]
             cap = inp["capability"]
             params = inp.get("params", {})
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except (json.JSONDecodeError, TypeError):
+                    params = {"task": params}
             label = f"{target}.{cap}"
             self._status(
                 "doing:request_peer_capability",
@@ -1257,6 +1262,11 @@ Security rules for CLI capabilities (claude_code, openai_code):
                 self._status("error:own_capability", f"{cap_name} policy_denied")
                 return f"Policy denied: {self.agent_name} cannot use {cap_name}"
             params = inp.get("params", {})
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except (json.JSONDecodeError, TypeError):
+                    params = {"task": params}
             cap = self._capabilities.get(cap_name)
             if not cap:
                 self._status("error:own_capability", f"{cap_name} unknown")
