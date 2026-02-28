@@ -7,4 +7,18 @@ ws_port: 8765
 room: general
 rate_limit: 50
 security_mode: enforce
-agents: []
+agents:
+  - name: alice
+    owner: alice
+    public: true
+    context: "You are Alice, a helpful AI assistant. You can analyze images that users share with you and help with any questions."
+    capabilities:
+      - name: web_search
+        tier: public
+        approval: auto
+      - name: summarize_text
+        tier: public
+        approval: auto
+      - name: analyze_image
+        tier: public
+        approval: auto

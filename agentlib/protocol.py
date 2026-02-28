@@ -99,6 +99,7 @@ class ChatMsg:
     from_agent: str
     text: str
     to_agent: str = ""
+    images: list[str] | None = None
     type: str = "chat"
 
 
@@ -261,7 +262,7 @@ def decode(raw: str) -> Msg | None:
             content=d["content"],
         ), d)
     if t == "chat":
-        return _stamp(ChatMsg(from_agent=d["from_agent"], text=d["text"], to_agent=d.get("to_agent", "")), d)
+        return _stamp(ChatMsg(from_agent=d["from_agent"], text=d["text"], to_agent=d.get("to_agent", ""), images=d.get("images") or None), d)
     if t == "connect_request":
         return _stamp(
             ConnectRequestMsg(from_agent=d["from_agent"], to_agent=d["to_agent"]), d

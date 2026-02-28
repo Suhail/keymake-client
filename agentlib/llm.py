@@ -218,15 +218,23 @@ def _openai_convert_messages(messages: list[dict]) -> list[dict]:
             out.append(msg)
 
         elif role == "user" and isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "tool_result":
-                    out.append({
-                        "role": "tool",
-                        "tool_call_id": item["tool_use_id"],
-                        "content": item.get("content", ""),
-                    })
-                else:
-                    out.append({"role": "user", "content": str(item)})
+            has_tool_results = any(
+                isinstance(item, dict) and item.get("type") == "tool_result"
+                for item in content
+            )
+            if has_tool_results:
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "tool_result":
+                        out.append({
+                            "role": "tool",
+                            "tool_call_id": item["tool_use_id"],
+                            "content": item.get("content", ""),
+                        })
+                    else:
+                        out.append({"role": "user", "content": str(item)})
+            else:
+                # Multimodal content (text + images) — pass through as-is
+                out.append({"role": "user", "content": content})
         else:
             out.append({"role": role, "content": content if isinstance(content, str) else str(content)})
     return out

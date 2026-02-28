@@ -75,7 +75,7 @@ class WSTransport(Transport):
             self._url,
             open_timeout=30,
             ping_interval=30,
-            ping_timeout=30,
+            ping_timeout=120,
         )
         join_msg = {
             "type": "join",
@@ -164,8 +164,9 @@ class WSTransport(Transport):
                     body = msg.get("body", "")
                     if body and self._agent:
                         await self._agent._handle_room_message(nick, body)
-            except Exception:
-                pass
+            except Exception as exc:
+                name = self._agent.agent_name if self._agent else "?"
+                print(f"[ws] {name} listen error: {exc}", flush=True)
 
             self._ws = None
             if self._closing:

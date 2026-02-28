@@ -320,10 +320,10 @@ class Agent:
     def send_to_room(self, body: str):
         self._transport.send_to_room(self.room, body)
 
-    def send_chat(self, text: str, to_agent: str = ""):
+    def send_chat(self, text: str, to_agent: str = "", images: list[str] | None = None):
         if "<silent>" in text.lower():
             return
-        chat = proto.ChatMsg(from_agent=self.agent_name, text=text, to_agent=to_agent)
+        chat = proto.ChatMsg(from_agent=self.agent_name, text=text, to_agent=to_agent, images=images)
         self.send_to_room(proto.encode(chat))
         self._print(f"[{self.agent_name}] {text}")
 
@@ -656,11 +656,37 @@ Security rules for CLI capabilities (claude_code, openai_code):
             if dedup_key in self._seen_messages:
                 return
             self._seen_messages.add(dedup_key)
-            self._print(f"[{msg.from_agent}] {msg.text}")
+            img_note = f" [+{len(msg.images)} image(s)]" if msg.images else ""
+            self._print(f"[{msg.from_agent}] {msg.text}{img_note}")
             prefix = f"DM from {msg.from_agent}" if msg.to_agent else msg.from_agent
-            self._conversation.append(
-                {"role": "user", "content": f"[{prefix}]: {msg.text}"}
-            )
+
+            if msg.images:
+                # Build multimodal content for the LLM
+                content: list[dict] = []
+                content.append({"type": "text", "text": f"[{prefix}]: {msg.text}"})
+                for img_data_url in msg.images:
+                    if img_data_url.startswith("data:"):
+                        header, _, b64data = img_data_url.partition(",")
+                        media_type = header.split(":")[1].split(";")[0] if ":" in header else "image/jpeg"
+                    else:
+                        media_type = "image/jpeg"
+                        b64data = img_data_url
+                    if self.provider and self.provider.name == "anthropic":
+                        content.append({
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": media_type, "data": b64data},
+                        })
+                    else:
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {"url": img_data_url},
+                        })
+                self._conversation.append({"role": "user", "content": content})
+            else:
+                self._conversation.append(
+                    {"role": "user", "content": f"[{prefix}]: {msg.text}"}
+                )
+
             if not self._llm_enabled:
                 return
             if msg.ts and msg.ts < self._join_ts:
